@@ -20,6 +20,7 @@ instructions first; perform searches only when the instructions are incomplete o
 ## XML documentation
 
 - Ensure all types and members have XML documentation comments.
+- If XML documentation exists, do not replace it. Only create XML documentation where it is missing.
 - Use proper grammar, punctuation, and capitalization in XML doc comments.
 - Use proper XML formatting and escape special characters.
 - XML tags should be properly nested and well-formed.
