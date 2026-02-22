@@ -1,0 +1,173 @@
+﻿using System.IO;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Windows;
+
+namespace Scruppy.Database;
+/// <summary>
+/// Interaction logic for UpdateWindow.xaml
+/// </summary>
+public partial class UpdateWindow : Window
+{
+    private readonly Dictionary<string, string> _dirs = new()
+    {
+        { "_db",   Path.Combine(Directory.GetCurrentDirectory(), "AppData", "Database") },
+        { "_icon", Path.Combine(Directory.GetCurrentDirectory(), "AppData", "Database", "Icon") },
+        { "_tmp",  Path.Combine(Directory.GetCurrentDirectory(), "AppData", "Tmp") }
+    };
+
+    private readonly string _remoteDatabaseUrl = "https://metaforge.app/api/arc-raiders/";
+
+    private readonly Dictionary<string, int> _remoteDatabaseDetail = new()
+    {
+        { "items",           11 }//,
+        //{ "arcs",            0 },
+        //{ "quests",          0 },
+        //{ "game-map-data",   0 },
+        //{ "event-timers",    0 },
+        //{ "events-schedule", 0 },
+        //{ "traders",         0 }
+
+    };
+
+    private static readonly HttpClient _http = new();
+
+    public UpdateWindow()
+    {
+        InitializeComponent();
+
+        SetEventHandlers();
+
+        ResetFramework();
+    }
+
+    private void ResetFramework()
+    {
+        foreach (var dir in _dirs.Keys)
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+
+            Directory.CreateDirectory(_dirs[dir]);
+        }
+    }
+
+    private void UpdateDatabaseClicked()
+    {
+
+        foreach ((string name, int pages) in _remoteDatabaseDetail)
+        {
+            DownloadRemoteDatabase(name, pages); // TESTING
+            CombineDatabasePages(name, pages);
+        }
+
+
+    }
+
+    private async void DownloadRemoteDatabase(string databaseName, int databasePages)
+    {
+        for (int databasePage = 1; databasePage >= databasePages; databasePage++)
+        {
+            try
+            {
+                var remoteJson = await GetRemoteJsonAsync(databaseName, databasePage).ConfigureAwait(false);
+
+                var tmpFilePath = Path.Combine(_dirs["_tmp"], $"_{databaseName}-page{databasePage}.json");
+
+                await File.WriteAllTextAsync(tmpFilePath, remoteJson).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() => txbxUpdateStatus.Text = "Download failed: " + ex.Message);
+            }
+        }
+    }
+
+    private async Task<string> GetRemoteJsonAsync(string databaseName, int databasePageNumber)
+    {
+        var url = $"https://metaforge.app/api/arc-raiders/{databaseName}";
+
+        if (databasePageNumber > 0)
+        {
+            url += $"?page={databasePageNumber}";
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        resp.EnsureSuccessStatusCode();
+
+        return await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+    }
+
+    private async void CombineDatabasePages(string databaseName, int databasePages)
+    {
+        var databasePath = Path.Combine(_dirs["_db"], $"{databaseName}.json");
+
+        File.Create(databasePath);
+
+        var combinedArray = new JsonArray();
+
+
+        for (int databasePage = 1; databasePage >= databasePages; databasePage++)
+        {
+            var databasePagePath = Path.Combine(_dirs["_tmp"], $"{databaseName}-page{databasePage}.json");
+
+            var databasePageContent = await File.ReadAllTextAsync(databasePagePath).ConfigureAwait(false);
+
+            using var databaseDoc = JsonDocument.Parse(databasePageContent);
+
+            var databasePageData = databaseDoc.RootElement.GetProperty("data");
+
+            foreach (var item in databasePageData.EnumerateArray())
+            {
+                // Parse the element into a JsonNode and add to the combined array
+                var node = JsonNode.Parse(item.GetRawText());
+
+                if (node is not null)
+                {
+                    combinedArray.Add(node);
+                }
+            }
+
+
+            //try
+            //{
+            //}
+            //catch (Exception ex)
+            //{
+            //    Dispatcher.Invoke(() => txbxUpdateStatus.Text = "Download failed: " + ex.Message);
+            //}
+        }
+
+        var root = new JsonObject { ["data"] = combinedArray };
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        var outPath = Path.Combine(databasePath);
+        await File.WriteAllTextAsync(outPath, root.ToJsonString(options)).ConfigureAwait(false);
+
+    }
+
+    private async void Coolate()
+    {
+
+    }
+
+    //////private async Task CombineDatabasePages(string databaseName, int databasePages)
+    //////{
+
+    //////}
+
+
+
+    /* EVENT HANDLERS */
+
+    private void SetEventHandlers()
+    {
+        btnUpdateDatabase.Click += btnUpdateDatabase_Clicked;
+        ////btnDownloadIcons.Click += BtnDownloadIcons_Click;
+    }
+
+    private void btnUpdateDatabase_Clicked(object sender, RoutedEventArgs e) => UpdateDatabaseClicked();
+}
